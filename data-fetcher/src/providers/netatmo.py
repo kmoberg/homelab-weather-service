@@ -1,72 +1,77 @@
-import requests
 import os
-from src.utils.logging_config import logger
+import json
 from datetime import datetime
+from src.utils.logging_config import logger
+
+TOKEN_FILE = "/app/tokens/netatmo_tokens.json"
 
 NETATMO_CLIENT_ID = os.getenv("NETATMO_CLIENT_ID")
 NETATMO_CLIENT_SECRET = os.getenv("NETATMO_CLIENT_SECRET")
 NETATMO_USERNAME = os.getenv("NETATMO_USERNAME")
 NETATMO_PASSWORD = os.getenv("NETATMO_PASSWORD")
 
-TOKEN_URL = "https://api.netatmo.com/oauth2/token"
-STATIONS_DATA_URL = "https://api.netatmo.com/api/getstationsdata"
-
-import requests
-import os
-from src.utils.logging_config import logger
-
-NETATMO_CLIENT_ID = os.getenv("NETATMO_CLIENT_ID")
-NETATMO_CLIENT_SECRET = os.getenv("NETATMO_CLIENT_SECRET")
-NETATMO_ACCESS_TOKEN = os.getenv("NETATMO_ACCESS_TOKEN")
-NETATMO_REFRESH_TOKEN = os.getenv("NETATMO_REFRESH_TOKEN")
-
-TOKEN_URL = "https://api.netatmo.com/oauth2/token"
-
+# You might choose to not use the env tokens at all and rely solely on the file.
+initial_access_token = os.getenv("NETATMO_ACCESS_TOKEN", "")
+initial_refresh_token = os.getenv("NETATMO_REFRESH_TOKEN", "")
 
 class NetatmoAuthError(Exception):
     pass
 
+def load_tokens():
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("access_token"), data.get("refresh_token")
+    # If file doesn't exist, use initial tokens from env or return None
+    if initial_access_token and initial_refresh_token:
+        return initial_access_token, initial_refresh_token
+    return None, None
+
+def save_tokens(access_token, refresh_token):
+    with open(TOKEN_FILE, "w") as f:
+        json.dump({
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "updated_at": datetime.utcnow().isoformat()
+        }, f)
+    logger.info("Netatmo tokens saved to file")
 
 def refresh_netatmo_token():
+    import requests
+    access_token, refresh_token = load_tokens()
+    if not refresh_token:
+        raise NetatmoAuthError("No refresh token available")
+
     payload = {
         "grant_type": "refresh_token",
-        "refresh_token": NETATMO_REFRESH_TOKEN,
+        "refresh_token": refresh_token,
         "client_id": NETATMO_CLIENT_ID,
         "client_secret": NETATMO_CLIENT_SECRET
     }
 
-    response = requests.post(TOKEN_URL, data=payload)
+    response = requests.post("https://api.netatmo.com/oauth2/token", data=payload)
     if response.status_code != 200:
         raise NetatmoAuthError(f"Failed to refresh token: {response.text}")
 
     data = response.json()
     new_access_token = data["access_token"]
     new_refresh_token = data["refresh_token"]
-
-    # Update environment variables or write them to a secure store
-    # If you can't write to .env automatically, you might just store them in memory.
-    # For a long-term solution, consider writing the updated tokens to a file or key store.
-
+    save_tokens(new_access_token, new_refresh_token)
     logger.info("Netatmo access token refreshed successfully")
     return new_access_token, new_refresh_token
 
-
 def get_netatmo_token():
-    # If we trust the existing access token is valid until it expires, we can just return it.
-    # If we want to always refresh for demonstration, call refresh_netatmo_token().
-    # In reality, you should check if the token is expired or near expiration before refreshing.
-
+    # Try to use current tokens
+    access_token, refresh_token = load_tokens()
+    # If no tokens at all, you might need to do an initial login flow (not shown here)
+    # or just trust that we already have valid tokens.
+    # If token is expired or you prefer to always refresh:
+    # For simplicity, always refresh here:
     new_access_token, new_refresh_token = refresh_netatmo_token()
-    # Update your global variables or however you store tokens
-    # In a real scenario, you might rewrite .env file or use another storage method
-    # For simplicity, we’ll just overwrite the global variables here
-    global NETATMO_ACCESS_TOKEN, NETATMO_REFRESH_TOKEN
-    NETATMO_ACCESS_TOKEN = new_access_token
-    NETATMO_REFRESH_TOKEN = new_refresh_token
-    return NETATMO_ACCESS_TOKEN
-
+    return new_access_token
 
 def fetch_netatmo_data():
+    import requests
     token = get_netatmo_token()
     headers = {
         "Authorization": f"Bearer {token}"
@@ -105,21 +110,3 @@ def fetch_netatmo_data():
         "wind_angle_deg": wind_angle,
         "time_utc": dash_data.get("time_utc")
     }
-
-
-def update_env_tokens(new_access, new_refresh):
-    lines = []
-    with open(".env", "r") as f:
-        lines = f.readlines()
-
-    new_lines = []
-    for line in lines:
-        if line.startswith("NETATMO_ACCESS_TOKEN="):
-            new_lines.append(f"NETATMO_ACCESS_TOKEN={new_access}\n")
-        elif line.startswith("NETATMO_REFRESH_TOKEN="):
-            new_lines.append(f"NETATMO_REFRESH_TOKEN={new_refresh}\n")
-        else:
-            new_lines.append(line)
-
-    with open(".env", "w") as f:
-        f.writelines(new_lines)
