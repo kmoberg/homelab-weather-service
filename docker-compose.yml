@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  influxdb:
+    image: influxdb:2.6
+    container_name: influxdb
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=secretpassword
+      - DOCKER_INFLUXDB_INIT_ORG=myorg
+      - DOCKER_INFLUXDB_INIT_BUCKET=weather
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=your_influx_token
+    volumes:
+      - ./influxdb_data:/var/lib/influxdb2
+    ports:
+      - "8086:8086"
+    restart: unless-stopped
+
+  data-fetcher:
+    build: ./data-fetcher
+    container_name: data-fetcher
+    environment:
+      - INFLUX_HOST=${INFLUX_HOST}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - FAA_API_KEY=${FAA_API_KEY}
+      - CHECKWX_API_KEY=${CHECKWX_API_KEY}
+      - VATSIM_URL=${VATSIM_URL}
+      - YRNO_API_URL=${YRNO_API_URL}
+      - NETATMO_CLIENT_ID=${NETATMO_CLIENT_ID}
+      - NETATMO_CLIENT_SECRET=${NETATMO_CLIENT_SECRET}
+      - NETATMO_USERNAME=${NETATMO_USERNAME}
+      - NETATMO_PASSWORD=${NETATMO_PASSWORD}
+      - NETATMO_ACCESS_TOKEN=${NETATMO_ACCESS_TOKEN}
+      - NETATMO_REFRESH_TOKEN=${NETATMO_REFRESH_TOKEN}
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+  api-service:
+    build: ./api-service
+    container_name: api-service
+    environment:
+      - INFLUX_HOST=${INFLUX_HOST}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+    depends_on:
+      - influxdb
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      - influxdb
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
