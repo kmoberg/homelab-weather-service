@@ -35,6 +35,8 @@ services:
       - NETATMO_ACCESS_TOKEN=${NETATMO_ACCESS_TOKEN}
       - NETATMO_REFRESH_TOKEN=${NETATMO_REFRESH_TOKEN}
       - LOG_LEVEL=DEBUG
+    volumes:
+      - ./tokens:/app/tokens
     depends_on:
       - influxdb
     restart: unless-stopped
@@ -46,23 +48,24 @@ services:
       - INFLUX_HOST=${INFLUX_HOST}
       - INFLUX_BUCKET=${INFLUX_BUCKET}
       - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=myorg
     depends_on:
       - influxdb
     ports:
       - "8080:8080"
     restart: unless-stopped
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    depends_on:
-      - influxdb
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
-      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
-    volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/data:/var/lib/grafana
-    ports:
-      - "3000:3000"
-    restart: unless-stopped
+#  grafana:
+#    image: grafana/grafana:latest
+#    container_name: grafana
+#    depends_on:
+#      - influxdb
+#    environment:
+#      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
+#      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+#    volumes:
+#      - ./grafana/provisioning:/etc/grafana/provisioning
+#      - ./grafana/data:/var/lib/grafana
+#    ports:
+#      - "3000:3000"
+#    restart: unless-stopped
