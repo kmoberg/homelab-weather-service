@@ -3,6 +3,7 @@ from src.providers.checkwx import fetch_checkwx_metar
 from src.providers.vatsim import fetch_vatsim_metar
 from src.providers.yrno import fetch_yr_forecast
 from src.providers.netatmo import fetch_netatmo_data
+from src.providers.energy import fetch_energy_prices
 from src.database.influx_client import write_measurement
 from src.utils.logging_config import logger
 import time
@@ -142,6 +143,9 @@ def store_netatmo_to_influx(data):
         logger.info(f"Wrote Netatmo data for {data['station_name']} to InfluxDB")
     except Exception as e:
         logger.error(f"Failed to write Netatmo data to InfluxDB: {e}", exc_info=True)
+
+    # Fetch Energy Prices
+    fetch_energy_prices()
 
 
 
