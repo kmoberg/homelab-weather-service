@@ -9,7 +9,7 @@ def get_influx_client():
         org=Config.INFLUX_ORG
     )
 
-def write_measurement(measurement_name: str, fields: dict, tags: dict = None):
+def write_measurement(measurement_name: str, fields: dict, tags: dict = None, timestamp=None):
     with get_influx_client() as client:
         write_api = client.write_api(write_options=SYNCHRONOUS)
         p = Point(measurement_name)
@@ -18,5 +18,6 @@ def write_measurement(measurement_name: str, fields: dict, tags: dict = None):
                 p = p.tag(k, v)
         for k, v in fields.items():
             p = p.field(k, v)
-        # Timestamp is optional. If not provided, InfluxDB uses the current time.
+        if timestamp:
+            p = p.time(timestamp)  # Set the timestamp explicitly
         write_api.write(bucket=Config.INFLUX_BUCKET, record=p)
