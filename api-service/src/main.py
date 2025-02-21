@@ -8,3 +8,4 @@ app = FastAPI(
 )
 
 app.include_router(weather.router, prefix="/api/weather", tags=["weather"])
+app.include_router(energy.router, prefix="/api/energy", tags=["energy"])

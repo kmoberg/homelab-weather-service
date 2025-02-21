@@ -1,3 +1,4 @@
+from src.providers import vatsim_traffic
 from src.providers.faa import fetch_faa_metar
 from src.providers.checkwx import fetch_checkwx_metar
 from src.providers.vatsim import fetch_vatsim_metar
@@ -7,6 +8,7 @@ from src.providers.energy import fetch_energy_prices
 from src.database.influx_client import write_measurement
 from src.utils.logging_config import logger
 import time
+import threading
 
 
 def get_airport_metars_from_providers(stations):
@@ -118,29 +120,29 @@ def store_yr_forecast_in_influxdb(forecast_data):
 
 
 def store_netatmo_to_influx(data):
+    """
+    Store Netatmo data in InfluxDB, ensuring consistent field types.
+    """
     if not data:
-        logger.warning("No netatmo data to store.")
+        logger.warning("No Netatmo data to store.")
         return
 
-    fields = {
-        "temperature_c": data["temperature"],
-        "humidity_percent": data["humidity"],
-        "pressure_hpa": data["pressure_hpa"],
-        "rain_mm": data["rain_mm"]
-    }
-    # If wind data is present, add it
-    if data.get("wind_strength_kmh") is not None:
-        fields["wind_strength_kmh"] = data["wind_strength_kmh"]
-    if data.get("wind_angle_deg") is not None:
-        fields["wind_angle_deg"] = data["wind_angle_deg"]
-
-    tags = {
-        "station_name": data["station_name"]
-    }
-
     try:
+        fields = {
+            "temperature_c": float(data["temperature"]) if data["temperature"] is not None else 0.0,
+            "humidity_percent": float(data["humidity"]) if data["humidity"] is not None else 0.0,
+            "pressure_hpa": float(data["pressure_hpa"]) if data["pressure_hpa"] is not None else 0.0,
+            "rain_mm": float(data.get("rain_mm", 0.0)) if data.get("rain_mm") is not None else 0.0,
+        }
+
+        # Debug output
+        logger.debug(f"Netatmo data: {fields}")
+
+        tags = {"station_name": data["station_name"]}
+
         write_measurement("netatmo", fields, tags)
         logger.info(f"Wrote Netatmo data for {data['station_name']} to InfluxDB")
+
     except Exception as e:
         logger.error(f"Failed to write Netatmo data to InfluxDB: {e}", exc_info=True)
 
@@ -196,10 +198,48 @@ def main():
         logger.warning("No Netatmo data returned.")
 
 
-if __name__ == "__main__":
-    # For testing, just run once. Later we can add a schedule or loop.
-    main()
-    # Optional: if you want to run repeatedly:
+def main_5min_loop():
+    """
+    Runs once every 5 minutes to fetch from other providers.
+    """
     while True:
-        main()
-        time.sleep(300)  # wait 5 minutes
+        logger.info("[fetcher] Starting 5-minute cycle (other providers)...")
+        try:
+            main()
+            logger.info("[fetcher] Completed 5-minute cycle.")
+        except Exception as e:
+            logger.error(f"[fetcher] Error in 5-minute cycle: {e}")
+
+        time.sleep(300)  # 5 minutes (300 seconds)
+
+
+def main_30sec_loop():
+    """
+    Runs once every 30 seconds to fetch VATSIM flight data.
+    """
+    while True:
+        logger.info("[fetcher] Starting 30-second cycle (VATSIM traffic)...")
+        try:
+            vatsim_traffic.fetch_and_store_vatsim_traffic()
+            logger.info("[fetcher] Completed 30-second cycle.")
+        except Exception as e:
+            logger.error(f"[fetcher] Error in 30-second cycle: {e}")
+
+        time.sleep(30)  # 30 seconds
+
+
+if __name__ == "__main__":
+    # Create the two threads
+    thread_5min = threading.Thread(target=main_5min_loop, daemon=True)
+    thread_30sec = threading.Thread(target=main_30sec_loop, daemon=True)
+
+    # Start the threads
+    thread_5min.start()
+    thread_30sec.start()
+
+    # Keep the main thread alive so that the child threads aren't terminated
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("[fetcher] Shutting down.")
